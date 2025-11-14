@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { useAuth } from '../components/AuthProvider'
+import { Link } from 'react-router-dom'
 import Spline from '@splinetool/react-spline'
 
 const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
@@ -47,12 +48,12 @@ export default function Landing() {
         </button>
       ) : (
         <>
-          <a
-            href="/app"
+          <Link
+            to="/app"
             className="px-6 py-3 rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-500 transition"
           >
             Open App
-          </a>
+          </Link>
           <button
             onClick={logout}
             className="px-4 py-3 rounded-xl bg-white/80 backdrop-blur text-gray-800 border border-gray-200 hover:bg-white transition"
@@ -83,7 +84,7 @@ export default function Landing() {
           ) : (
             <>
               <span className="text-sm text-gray-700 hidden sm:inline">Hi, {user.name}</span>
-              <a href="/app" className="px-3 py-1.5 text-sm rounded-lg bg-indigo-600 text-white">Open App</a>
+              <Link to="/app" className="px-3 py-1.5 text-sm rounded-lg bg-indigo-600 text-white">Open App</Link>
               <button onClick={logout} className="px-3 py-1.5 text-sm rounded-lg bg-gray-100">Logout</button>
             </>
           )}
