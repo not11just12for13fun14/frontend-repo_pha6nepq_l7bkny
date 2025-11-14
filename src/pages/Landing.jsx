@@ -1,16 +1,32 @@
-import { useEffect, useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useMemo } from 'react'
+import { motion } from 'framer-motion'
 import { useAuth } from '../components/AuthProvider'
+import Spline from '@splinetool/react-spline'
 
 const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
+const SPLINE_SCENE = import.meta.env.VITE_SPLINE_SCENE || ''
 
-function Section({ title, subtitle, children }) {
+function Section({ eyebrow, title, body, align = 'left', cta, index }) {
+  const from = align === 'left' ? { x: -24, opacity: 0 } : { x: 24, opacity: 0 }
   return (
-    <section className="px-6 py-16 border-b bg-white">
+    <section className="relative px-6 py-20 sm:py-28">
       <div className="mx-auto max-w-6xl">
-        <h2 className="text-3xl font-bold text-gray-900">{title}</h2>
-        {subtitle && <p className="text-gray-600 mt-1">{subtitle}</p>}
-        <div className="mt-6 space-y-3 text-gray-700">{children}</div>
+        <motion.div
+          initial={from}
+          whileInView={{ x: 0, opacity: 1 }}
+          viewport={{ once: true, amount: 0.4 }}
+          transition={{ type: 'spring', stiffness: 80, damping: 18 }}
+          className={align === 'left' ? 'md:max-w-3xl' : 'md:ml-auto md:max-w-3xl'}
+        >
+          {eyebrow && (
+            <div className="text-sm font-semibold tracking-wide text-indigo-600/90">{eyebrow}</div>
+          )}
+          <h2 className="mt-2 text-3xl sm:text-4xl font-bold text-gray-900 leading-tight">
+            {title}
+          </h2>
+          <p className="mt-4 text-lg text-gray-600">{body}</p>
+          {cta}
+        </motion.div>
       </div>
     </section>
   )
@@ -19,96 +35,186 @@ function Section({ title, subtitle, children }) {
 export default function Landing() {
   const { user, loginWithGoogle, logout, loading } = useAuth()
 
+  const heroCTA = (
+    <div className="mt-8 flex flex-wrap items-center gap-3">
+      {!user ? (
+        <button
+          onClick={loginWithGoogle}
+          disabled={loading}
+          className="px-6 py-3 rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-500 transition"
+        >
+          {loading ? 'Signing in…' : 'Start with Google'}
+        </button>
+      ) : (
+        <>
+          <a
+            href="/app"
+            className="px-6 py-3 rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-500 transition"
+          >
+            Open App
+          </a>
+          <button
+            onClick={logout}
+            className="px-4 py-3 rounded-xl bg-white/80 backdrop-blur text-gray-800 border border-gray-200 hover:bg-white transition"
+          >
+            Logout
+          </button>
+        </>
+      )}
+    </div>
+  )
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-indigo-50 via-white to-blue-50">
-      <header className="px-6 py-5 flex items-center justify-between">
-        <div className="text-xl font-bold text-indigo-700">SkillSwap</div>
+    <div className="relative min-h-screen overflow-hidden bg-gradient-to-b from-indigo-50 via-white to-blue-50">
+      {/* Top Nav */}
+      <header className="relative z-20 px-6 py-5 flex items-center justify-between">
+        <div className="text-xl font-bold">
+          <span className="bg-gradient-to-r from-indigo-600 to-blue-600 bg-clip-text text-transparent">SkillSwap</span>
+        </div>
         <div className="flex items-center gap-3">
-          {user ? (
-            <>
-              <span className="text-sm text-gray-700">Hi, {user.name}</span>
-              <button onClick={logout} className="px-3 py-1.5 text-sm rounded-lg bg-gray-100">Logout</button>
-              <a href="/app" className="px-3 py-1.5 text-sm rounded-lg bg-indigo-600 text-white">Open App</a>
-            </>
+          {!user ? (
+            <button
+              onClick={loginWithGoogle}
+              disabled={loading}
+              className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500"
+            >
+              {loading ? 'Signing in…' : 'Login with Google'}
+            </button>
           ) : (
-            <button onClick={loginWithGoogle} disabled={loading} className="px-4 py-2 rounded-lg bg-indigo-600 text-white">{loading ? 'Signing in...' : 'Login with Google'}</button>
+            <>
+              <span className="text-sm text-gray-700 hidden sm:inline">Hi, {user.name}</span>
+              <a href="/app" className="px-3 py-1.5 text-sm rounded-lg bg-indigo-600 text-white">Open App</a>
+              <button onClick={logout} className="px-3 py-1.5 text-sm rounded-lg bg-gray-100">Logout</button>
+            </>
           )}
         </div>
       </header>
 
-      <main>
-        <section className="px-6 pt-10 pb-16">
-          <div className="mx-auto max-w-6xl grid md:grid-cols-2 gap-8 items-center">
-            <div>
-              <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight text-gray-900 leading-tight">Peer-to-Peer Learning, Powered by Tokens</h1>
-              <p className="mt-5 text-gray-600">Teach to earn. Learn to spend. Real-time chat, sessions, AI coach, and an admin panel keep everything smooth and fair.</p>
-              {!user && (
-                <button onClick={loginWithGoogle} disabled={loading} className="mt-6 px-5 py-2.5 rounded-lg bg-indigo-600 text-white">{loading ? 'Signing in...' : 'Start with Google'}</button>
-              )}
-            </div>
-            <div className="rounded-2xl border bg-white p-4">
-              <ul className="grid grid-cols-2 gap-3 text-sm text-gray-700">
-                <li className="p-3 rounded-lg border">Google Auth</li>
-                <li className="p-3 rounded-lg border">Profiles</li>
-                <li className="p-3 rounded-lg border">Token Ledger</li>
-                <li className="p-3 rounded-lg border">Matching</li>
-                <li className="p-3 rounded-lg border">Connections</li>
-                <li className="p-3 rounded-lg border">Notifications</li>
-                <li className="p-3 rounded-lg border">Real-time Chat</li>
-                <li className="p-3 rounded-lg border">Sessions + Whiteboard</li>
-                <li className="p-3 rounded-lg border">AI Coach</li>
-                <li className="p-3 rounded-lg border">Admin Panel</li>
-              </ul>
-            </div>
-          </div>
-        </section>
+      {/* 3D Background only on Landing */}
+      <div className="pointer-events-none absolute inset-0 -z-10">
+        {SPLINE_SCENE ? (
+          <Spline scene={SPLINE_SCENE} />
+        ) : (
+          <div className="absolute inset-0 bg-[radial-gradient(60%_40%_at_50%_0%,rgba(99,102,241,0.25),transparent_60%),radial-gradient(40%_30%_at_80%_20%,rgba(59,130,246,0.18),transparent_60%),linear-gradient(to_bottom,white,rgba(239,246,255,0.6))]" />
+        )}
+        <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px]" />
+      </div>
 
-        <Section title="1. Google Authentication" subtitle="Fast sign-in with Google via Firebase (stubbed here; ready to integrate)">
-          <p>Click the Login button above to simulate Google login. We’ll swap in Firebase and JWT to secure backend calls.</p>
-        </Section>
-        <Section title="2. User Profiles" subtitle="Show your skills to teach and learn">
-          <p>Profiles include name, photo, bio, teaching and learning skills, and token balance.</p>
-        </Section>
-        <Section title="3. Token Economy" subtitle="Earn by teaching, spend to learn">
-          <p>Every accepted session costs 1 token to the learner. Completing a session gives 1 token to the teacher. All transactions are recorded for transparency.</p>
-        </Section>
-        <Section title="4. Skill Matching" subtitle="Find peers and mentors quickly">
-          <p>Search by skills you want to learn. Results prioritize overlap with mentors’ teaching skills.</p>
-        </Section>
-        <Section title="5. Connections" subtitle="Build your learning network">
-          <p>Send and accept connection requests to keep in touch and collaborate later.</p>
-        </Section>
-        <Section title="6. Notifications" subtitle="Never miss important actions">
-          <p>See updates on connection requests, session proposals, and status changes.</p>
-        </Section>
-        <Section title="7. Real-Time Chat" subtitle="Talk instantly with your peers">
-          <p>WebSocket chat enables instant messaging with delivery to all devices online.</p>
-        </Section>
-        <Section title="8. Session Scheduling" subtitle="Propose, accept, and schedule sessions">
-          <p>Suggest dates and topics directly in chat; mentors can accept or decline in real-time.</p>
-        </Section>
-        <Section title="9. User Dashboard" subtitle="Your activity in one place">
-          <p>See token balance, upcoming and completed sessions, and recent activity.</p>
-        </Section>
-        <Section title="10. Admin Panel" subtitle="Keep the community healthy">
-          <p>Admins can review users, update roles, deactivate or remove accounts when needed.</p>
-        </Section>
-        <Section title="11. Responsive Design" subtitle="Built with Tailwind CSS">
-          <p>Looks great and performs smoothly on phones, tablets, and desktops.</p>
-        </Section>
-        <Section title="12. Collaborative Whiteboard" subtitle="Draw together during live sessions">
-          <p>Shared strokes, eraser, and zoom/pan synchronized over WebSockets for a classroom feel.</p>
-        </Section>
-        <Section title="13. Session History & Feedback" subtitle="Reflect and grow">
-          <p>After sessions, leave ratings and feedback to help others find great mentors.</p>
-        </Section>
-        <Section title="14. Secure Token Transactions" subtitle="Every move recorded">
-          <p>Token debits and credits are logged with references to their sessions.</p>
-        </Section>
-        <Section title="15. Logout & Session Management" subtitle="Your data stays safe">
-          <p>Sign out on shared devices with one click.</p>
-        </Section>
-      </main>
+      {/* Hero */}
+      <section className="relative z-10 px-6 pt-10 pb-24">
+        <div className="mx-auto max-w-6xl grid md:grid-cols-2 gap-10 items-center">
+          <motion.div
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ duration: 0.8, ease: 'easeOut' }}
+          >
+            <div className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-white/70 backdrop-blur px-3 py-1 text-xs text-indigo-700">
+              Learn by teaching. Teach by learning.
+            </div>
+            <h1 className="mt-4 text-4xl sm:text-6xl font-extrabold tracking-tight text-gray-900 leading-tight">
+              A storytelling journey into peer-to-peer learning
+            </h1>
+            <p className="mt-5 text-lg text-gray-600 max-w-xl">
+              Trade skills with people worldwide. Earn tokens by teaching. Spend them to learn. Real‑time chat, live sessions, and an AI coach guide your growth.
+            </p>
+            {heroCTA}
+            <div className="mt-8 flex items-center gap-6 text-sm text-gray-600">
+              <div className="flex -space-x-2">
+                <span className="inline-block h-8 w-8 rounded-full bg-indigo-200 border border-white" />
+                <span className="inline-block h-8 w-8 rounded-full bg-blue-200 border border-white" />
+                <span className="inline-block h-8 w-8 rounded-full bg-violet-200 border border-white" />
+              </div>
+              <span>Thousands of swaps completed</span>
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ y: 24, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ duration: 0.9, ease: 'easeOut', delay: 0.1 }}
+            className="relative"
+          >
+            <div className="rounded-2xl border bg-white/80 backdrop-blur p-5 shadow-xl shadow-indigo-100">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm text-gray-700">
+                {['Google Auth','Profiles','Token Ledger','Matching','Connections','Notifications','Real-time Chat','Sessions','Whiteboard','AI Coach','Dashboard','Admin Panel'].map((f) => (
+                  <div key={f} className="p-3 rounded-lg border bg-white/70 hover:shadow-sm transition">
+                    {f}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* Story Sections */}
+      <Section
+        eyebrow="Chapter 1"
+        title="The problem: learning that doesn’t fit your life"
+        body="Courses are long, tutors are expensive, and forums are noisy. You need quick, focused help from someone who’s done it before."
+        align="left"
+        cta={null}
+      />
+      <Section
+        eyebrow="Chapter 2"
+        title="The spark: a fair exchange of value"
+        body="Teach what you know to earn tokens. Spend tokens to learn what you don’t. No invoices. No awkward favors. Just balanced growth."
+        align="right"
+        cta={null}
+      />
+      <Section
+        eyebrow="Chapter 3"
+        title="How it works"
+        body="Sign in with Google. Share your skills. Get matched. Chat in real time. Schedule a live session with an interactive whiteboard. Earn or spend tokens automatically."
+        align="left"
+        cta={heroCTA}
+      />
+      <Section
+        eyebrow="Chapter 4"
+        title="Your guide: the AI coach"
+        body="Before and after sessions, the AI coach helps you set goals, plan practice, and reflect—so every swap leaves you stronger."
+        align="right"
+        cta={null}
+      />
+
+      {/* Compact Features Grid */}
+      <section className="px-6 py-20 bg-gradient-to-b from-white to-indigo-50/60">
+        <div className="mx-auto max-w-6xl">
+          <h3 className="text-2xl font-bold text-gray-900">Everything you need to learn by teaching</h3>
+          <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[
+              { t: 'Google Authentication', d: 'Fast sign‑in via Google (Firebase ready).' },
+              { t: 'Profiles', d: 'Show skills you teach and learn.' },
+              { t: 'Token Economy', d: 'Earn by teaching, spend to learn.' },
+              { t: 'Skill Matching', d: 'Find mentors with the skills you need.' },
+              { t: 'Connections', d: 'Build your learning network.' },
+              { t: 'Notifications', d: 'Stay in the loop on requests and sessions.' },
+              { t: 'Real‑Time Chat', d: 'Instant messaging with WebSockets.' },
+              { t: 'Sessions + Whiteboard', d: 'Collaborate live with shared canvas.' },
+              { t: 'AI Coach', d: 'Personalized prep and reflection.' },
+              { t: 'Dashboard', d: 'See tokens, sessions, and activity.' },
+              { t: 'Admin Controls', d: 'Keep the community healthy.' },
+              { t: 'Secure Transactions', d: 'Transparent token ledger.' },
+            ].map(({ t, d }) => (
+              <div key={t} className="rounded-xl border bg-white p-4 hover:shadow-sm transition">
+                <div className="font-semibold text-gray-900">{t}</div>
+                <div className="text-sm text-gray-600 mt-1">{d}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Closing CTA */}
+      <section className="px-6 py-20">
+        <div className="mx-auto max-w-5xl text-center">
+          <h3 className="text-3xl sm:text-4xl font-bold text-gray-900">Ready to start your next chapter?</h3>
+          <p className="mt-3 text-gray-600">
+            Sign in to explore matches, chat in real‑time, and book your first session. Your tokens are waiting.
+          </p>
+          {heroCTA}
+        </div>
+      </section>
 
       <footer className="px-6 py-10 text-center text-sm text-gray-500">SkillSwap – Learn by teaching. Teach by learning.</footer>
     </div>
