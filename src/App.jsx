@@ -1,23 +1,60 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import Spline from '@splinetool/react-spline'
 import { motion, AnimatePresence, useScroll, useTransform, useSpring } from 'framer-motion'
+
+// Lazy Spline load only when needed to keep bundle light
+let SplineComp = null
+async function loadSpline() {
+  if (!SplineComp) {
+    const mod = await import('@splinetool/react-spline')
+    SplineComp = mod.default
+  }
+  return SplineComp
+}
 
 const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
+// Media preference helpers
+function usePrefersReducedMotion() {
+  const [pref, setPref] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const onChange = () => setPref(mq.matches)
+    onChange()
+    mq.addEventListener?.('change', onChange)
+    return () => mq.removeEventListener?.('change', onChange)
+  }, [])
+  return pref
+}
+function usePrefersReducedData() {
+  const [pref, setPref] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-data: reduce)')
+    const onChange = () => setPref(mq.matches)
+    if (mq.media !== 'not all') onChange()
+    mq.addEventListener?.('change', onChange)
+    return () => mq.removeEventListener?.('change', onChange)
+  }, [])
+  return pref
+}
+
 // Small utilities
-function useMouseTilt() {
+function useMouseTilt(enabled = true) {
   const ref = useRef(null)
   const [style, setStyle] = useState({})
   useEffect(() => {
     const el = ref.current
-    if (!el) return
+    if (!el || !enabled) return
+    let raf = null
     const onMove = (e) => {
-      const r = el.getBoundingClientRect()
-      const x = (e.clientX - r.left) / r.width
-      const y = (e.clientY - r.top) / r.height
-      const rx = (y - 0.5) * -8
-      const ry = (x - 0.5) * 8
-      setStyle({ transform: `perspective(900px) rotateX(${rx}deg) rotateY(${ry}deg)` })
+      if (raf) cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => {
+        const r = el.getBoundingClientRect()
+        const x = (e.clientX - r.left) / r.width
+        const y = (e.clientY - r.top) / r.height
+        const rx = (y - 0.5) * -8
+        const ry = (x - 0.5) * 8
+        setStyle({ transform: `perspective(900px) rotateX(${rx}deg) rotateY(${ry}deg)` })
+      })
     }
     const onLeave = () => setStyle({ transform: 'perspective(900px) rotateX(0deg) rotateY(0deg)' })
     el.addEventListener('mousemove', onMove)
@@ -25,12 +62,20 @@ function useMouseTilt() {
     return () => {
       el.removeEventListener('mousemove', onMove)
       el.removeEventListener('mouseleave', onLeave)
+      if (raf) cancelAnimationFrame(raf)
     }
-  }, [])
-  return { ref, style }
+  }, [enabled])
+  return { ref, style: enabled ? style : {} }
 }
 
-function Glow() {
+function Glow({ lite = false }) {
+  if (lite) {
+    return (
+      <div className="pointer-events-none absolute inset-0 -z-10">
+        <div className="absolute inset-0 bg-gradient-to-b from-indigo-50 via-white to-blue-50" />
+      </div>
+    )
+  }
   return (
     <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
       <div className="absolute -top-40 -left-40 h-96 w-96 rounded-full bg-gradient-to-tr from-indigo-300/40 via-fuchsia-200/40 to-sky-200/40 blur-3xl" />
@@ -42,22 +87,25 @@ function Glow() {
 
 function Badge({ children }) {
   return (
-    <span className="inline-flex items-center gap-2 rounded-full border border-indigo-200/60 bg-white/70 px-3 py-1 text-xs text-indigo-700 shadow-sm backdrop-blur">
+    <span className="inline-flex items-center gap-2 rounded-full border border-indigo-200/60 bg-white/70 px-3 py-1 text-xs text-indigo-700 shadow-sm">
       {children}
     </span>
   )
 }
 
-function ScrollProgress() {
+function ScrollProgress({ lite = false }) {
   const { scrollYProgress } = useScroll()
   const scaleX = useSpring(scrollYProgress, { stiffness: 100, damping: 30, restDelta: 0.001 })
+  if (lite) {
+    return <div className="fixed left-0 right-0 top-0 h-0.5 bg-indigo-500/70 z-50" />
+  }
   return (
     <motion.div style={{ scaleX }} className="fixed left-0 right-0 top-0 h-1 origin-left bg-gradient-to-r from-indigo-600 via-fuchsia-500 to-sky-400 z-50" />
   )
 }
 
-// Magnetic button + micro-sparkles
-function MagneticButton({ children, className = '', onClick, as = 'button', href }) {
+// Magnetic button + micro-sparkles (lite disables sparkles and magnetism)
+function MagneticButton({ children, className = '', onClick, as = 'button', href, lite = false, disabled }) {
   const ref = useRef(null)
   const [btnStyle, setBtnStyle] = useState({})
   const [sparks, setSparks] = useState([])
@@ -72,12 +120,11 @@ function MagneticButton({ children, className = '', onClick, as = 'button', href
     const life = 600 + Math.random()*400
     const spark = { id, x, y, dx, dy, size, color }
     setSparks(prev => [...prev, spark])
-    setTimeout(() => {
-      setSparks(prev => prev.filter(s => s.id !== id))
-    }, life)
+    setTimeout(() => setSparks(prev => prev.filter(s => s.id !== id)), life)
   }
 
   const onMove = (e) => {
+    if (lite) return
     const el = ref.current
     if (!el) return
     const r = el.getBoundingClientRect()
@@ -96,18 +143,13 @@ function MagneticButton({ children, className = '', onClick, as = 'button', href
       onMouseMove={onMove}
       onMouseLeave={onLeave}
       whileTap={{ scale: 0.98 }}
-      className={`relative inline-flex items-center justify-center overflow-hidden ${className}`}
+      className={`relative inline-flex items-center justify-center overflow-hidden ${className} ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
       style={btnStyle}
     >
-      <span className="pointer-events-none absolute inset-0 bg-gradient-to-r from-white/10 to-white/0" />
-      {sparks.map(s => (
+      {!lite && <span className="pointer-events-none absolute inset-0 bg-gradient-to-r from-white/10 to-white/0" />}
+      {!lite && sparks.map(s => (
         <span key={s.id} className="pointer-events-none absolute rounded-full"
-          style={{
-            left: s.x, top: s.y, width: s.size, height: s.size,
-            background: s.color, filter: 'blur(0.5px)',
-            transform: `translate(${s.dx}px, ${s.dy}px)`,
-            opacity: 0.85, transition: 'transform 700ms ease-out, opacity 700ms ease-out'
-          }}
+          style={{ left: s.x, top: s.y, width: s.size, height: s.size, background: s.color, filter: 'blur(0.5px)', transform: `translate(${s.dx}px, ${s.dy}px)`, opacity: 0.85, transition: 'transform 700ms ease-out, opacity 700ms ease-out' }}
         />
       ))}
       <span className="relative z-10">{children}</span>
@@ -122,27 +164,29 @@ function MagneticButton({ children, className = '', onClick, as = 'button', href
     )
   }
   return (
-    <button onClick={onClick} className="inline-block">
+    <button onClick={onClick} className="inline-block" disabled={disabled}>
       <Common>{children}</Common>
     </button>
   )
 }
 
-function Landing({ onStartStory, onStartMatch }) {
+function Landing({ onStartStory, onStartMatch, lite = false }) {
   const { scrollYProgress } = useScroll()
   const y1 = useTransform(scrollYProgress, [0, 1], [0, -150])
   const y2 = useTransform(scrollYProgress, [0, 1], [0, -60])
 
   return (
     <div className="relative min-h-screen w-full overflow-hidden bg-gradient-to-b from-indigo-50 via-white to-blue-50">
-      <motion.div className="absolute inset-0" style={{ y: y1 }}>
-        <Spline scene="https://prod.spline.design/hGDm7Foxug7C6E8s/scene.splinecode" style={{ width: '100%', height: '100%' }} />
-      </motion.div>
-      <Glow />
+      {!lite && (
+        <motion.div className="absolute inset-0" style={{ y: y1 }}>
+          <LazySpline />
+        </motion.div>
+      )}
+      <Glow lite={lite} />
 
       <div className="relative z-10">
         <header className="px-6 py-5 flex items-center justify-between">
-          <motion.div initial={{ y: -10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.1 }} className="text-xl font-bold text-indigo-700">SkillSwap</motion.div>
+          <div className="text-xl font-bold text-indigo-700">SkillSwap</div>
           <nav className="flex items-center gap-4">
             <a href="#story" className="text-sm text-gray-700 hover:text-indigo-700">Story</a>
             <a href="#match" className="text-sm text-gray-700 hover:text-indigo-700">Find Mentors</a>
@@ -151,7 +195,7 @@ function Landing({ onStartStory, onStartMatch }) {
         </header>
 
         <section className="px-6 pt-16 pb-24 sm:pt-24 sm:pb-32 grid md:grid-cols-2 gap-8 items-center">
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
+          <div>
             <div className="flex flex-wrap gap-2 mb-4">
               <Badge>Peer-to-Peer Learning</Badge>
               <Badge>Token Economy</Badge>
@@ -164,22 +208,39 @@ function Landing({ onStartStory, onStartMatch }) {
               Earn Skill Tokens by teaching. Spend them to learn. Real-time chat, scheduling, and live sessions — all in one place.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
-              <MagneticButton as="a" href="#story" onClick={onStartStory} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg shadow">See the Story</MagneticButton>
-              <MagneticButton as="a" href="#match" onClick={onStartMatch} className="bg-white hover:bg-gray-50 text-indigo-700 border border-indigo-200 px-5 py-2.5 rounded-lg shadow-sm">Start Matching</MagneticButton>
+              <MagneticButton lite={lite} as="a" href="#story" onClick={onStartStory} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg shadow">See the Story</MagneticButton>
+              <MagneticButton lite={lite} as="a" href="#match" onClick={onStartMatch} className="bg-white hover:bg-gray-50 text-indigo-700 border border-indigo-200 px-5 py-2.5 rounded-lg shadow-sm">Start Matching</MagneticButton>
             </div>
             <p className="mt-3 text-sm text-gray-500">Powered by FastAPI, WebSockets, and MongoDB</p>
-          </motion.div>
+          </div>
 
-          <motion.div className="relative h-[420px] md:h-[560px] rounded-2xl overflow-hidden border border-indigo-100/60 bg-white/70 backdrop-blur-sm" style={{ y: y2 }}>
-            <InteractiveHeroCards />
-          </motion.div>
+          <div className={`relative h-[360px] md:h-[520px] rounded-2xl overflow-hidden border ${lite ? 'border-indigo-100 bg-white' : 'border-indigo-100/60 bg-white/70 backdrop-blur-sm'}`} style={!lite ? { transform: y2 } : undefined}>
+            <InteractiveHeroCards lite={lite} />
+          </div>
         </section>
       </div>
     </div>
   )
 }
 
-function InteractiveHeroCards() {
+function LazySpline() {
+  const ref = useRef(null)
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    const start = () => loadSpline().then(() => setReady(true))
+    if ('requestIdleCallback' in window) {
+      // @ts-ignore
+      requestIdleCallback(start)
+    } else {
+      setTimeout(start, 300)
+    }
+  }, [])
+  if (!ready || !SplineComp) return null
+  const Spline = SplineComp
+  return <Spline scene="https://prod.spline.design/hGDm7Foxug7C6E8s/scene.splinecode" style={{ width: '100%', height: '100%' }} />
+}
+
+function InteractiveHeroCards({ lite = false }) {
   const cards = [
     { t: 'Alex learns', s: 'React • UX • AI', q: '“I spent 1 token for a 30min session.”', color: 'from-white to-indigo-50/60', accent: 'text-indigo-700' },
     { t: 'Maya teaches', s: 'React • JS', q: '“I earned 1 token by teaching.”', color: 'from-white to-sky-50/60', accent: 'text-sky-700' },
@@ -187,7 +248,7 @@ function InteractiveHeroCards() {
   return (
     <div className="absolute inset-0 grid grid-cols-2 gap-3 p-3">
       {cards.map((c, i) => (
-        <TiltCard key={i} className={`rounded-xl bg-gradient-to-br ${c.color} border border-indigo-100/70 p-4 flex flex-col justify-between`}>
+        <TiltCard key={i} enabled={!lite} className={`rounded-xl bg-gradient-to-br ${c.color} border border-indigo-100/70 p-4 flex flex-col justify-between`}>
           <div>
             <div className="text-sm font-semibold text-gray-800">{c.t}</div>
             <div className="mt-1 text-xs text-gray-500">{c.s}</div>
@@ -195,31 +256,45 @@ function InteractiveHeroCards() {
           <div className={`mt-3 text-[10px] ${c.accent}`}>{c.q}</div>
         </TiltCard>
       ))}
-      <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6, delay: 0.15 }} className="col-span-2 rounded-xl bg-gradient-to-r from-indigo-600 to-fuchsia-600 p-4 text-white">
+      <div className="col-span-2 rounded-xl bg-gradient-to-r from-indigo-600 to-fuchsia-600 p-4 text-white">
         <div className="text-sm font-medium">Live Session</div>
         <div className="text-xs opacity-90">Video • Whiteboard • Chat</div>
-      </motion.div>
+      </div>
     </div>
   )
 }
 
-function TiltCard({ children, className = '' }) {
-  const { ref, style } = useMouseTilt()
+function TiltCard({ children, className = '', enabled = true }) {
+  const { ref, style } = useMouseTilt(enabled)
   return (
-    <motion.div ref={ref} style={style} whileHover={{ scale: 1.02 }} transition={{ type: 'spring', stiffness: 200, damping: 20 }} className={className}>
+    <div ref={ref} style={style} className={`${className} transition-transform`}>
       {children}
-    </motion.div>
+    </div>
   )
 }
 
-function StoryPanel({ step, title, copy, accent, emoji }) {
+function StoryPanel({ step, title, copy, accent, emoji, lite = false }) {
+  if (lite) {
+    return (
+      <div className="relative overflow-hidden rounded-2xl border bg-white shadow-sm">
+        <div className="relative p-6">
+          <div className="flex items-center gap-3 text-xs text-gray-500">
+            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-white font-semibold">{step}</span>
+            <span>Chapter {step}</span>
+          </div>
+          <div className="mt-3 flex items-start gap-3">
+            <div className="text-2xl" aria-hidden>{emoji}</div>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+              <p className="mt-1 text-gray-600 text-sm leading-relaxed">{copy}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
   return (
-    <motion.div
-      initial={{ y: 30, opacity: 0 }}
-      whileInView={{ y: 0, opacity: 1 }}
-      viewport={{ once: true, margin: '-80px' }}
-      transition={{ duration: 0.6 }}
-      className="relative overflow-hidden rounded-2xl border bg-white/70 backdrop-blur shadow-sm">
+    <motion.div initial={{ y: 30, opacity: 0 }} whileInView={{ y: 0, opacity: 1 }} viewport={{ once: true, margin: '-80px' }} transition={{ duration: 0.6 }} className="relative overflow-hidden rounded-2xl border bg-white/70 backdrop-blur shadow-sm">
       <div className={`absolute inset-x-0 -top-20 h-40 ${accent} blur-3xl opacity-30`} />
       <div className="relative p-6">
         <div className="flex items-center gap-3 text-xs text-gray-500">
@@ -238,7 +313,7 @@ function StoryPanel({ step, title, copy, accent, emoji }) {
   )
 }
 
-function StoryRail({ idx, setIdx }) {
+function StoryRail({ idx, setIdx, lite = false }) {
   const steps = [
     { title: 'Discover your path', emoji: '🧭', accent: 'bg-gradient-to-r from-indigo-200 to-sky-200', copy: 'Tell us what you want to learn, and what you can teach. Our matching shows mentors and peers who fit your goals.' },
     { title: 'Earn and spend tokens', emoji: '🪙', accent: 'bg-gradient-to-r from-amber-200 to-fuchsia-200', copy: 'Teach to earn, learn to spend. The token economy keeps help flowing both ways — fair and simple.' },
@@ -249,16 +324,15 @@ function StoryRail({ idx, setIdx }) {
 
   return (
     <section id="story" className="relative px-6 py-20 bg-gradient-to-b from-white to-indigo-50">
-      <Glow />
+      <Glow lite={lite} />
       <div className="mx-auto max-w-6xl">
         <div className="text-center">
           <h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-gray-900">Your SkillSwap Journey</h2>
           <p className="mt-3 text-gray-600 max-w-2xl mx-auto">A story-driven path from curiosity to mastery — powered by a community that values your time.</p>
         </div>
 
-        {/* Interactive carousel */}
         <div className="mt-10">
-          <div className="relative overflow-hidden rounded-2xl border bg-white/70 backdrop-blur">
+          <div className={`relative overflow-hidden rounded-2xl border ${lite ? 'bg-white' : 'bg-white/70 backdrop-blur'}`}>
             <div className="flex items-center justify-between px-4 py-3">
               <div className="text-sm text-gray-500">Chapter {idx + 1} of {steps.length}</div>
               <div className="flex gap-2">
@@ -268,23 +342,26 @@ function StoryRail({ idx, setIdx }) {
               </div>
             </div>
             <div className="p-6 min-h-[180px]">
-              <AnimatePresence mode="wait">
-                <motion.div key={idx} initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }} transition={{ duration: 0.35 }}>
-                  <StoryPanel step={idx + 1} title={steps[idx].title} emoji={steps[idx].emoji} accent={steps[idx].accent} copy={steps[idx].copy} />
-                </motion.div>
-              </AnimatePresence>
+              {lite ? (
+                <StoryPanel lite step={idx + 1} title={steps[idx].title} emoji={steps[idx].emoji} accent={steps[idx].accent} copy={steps[idx].copy} />
+              ) : (
+                <AnimatePresence mode="wait">
+                  <motion.div key={idx} initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }} transition={{ duration: 0.35 }}>
+                    <StoryPanel step={idx + 1} title={steps[idx].title} emoji={steps[idx].emoji} accent={steps[idx].accent} copy={steps[idx].copy} />
+                  </motion.div>
+                </AnimatePresence>
+              )}
             </div>
             <div className="flex items-center justify-between px-4 py-3 border-t">
-              <MagneticButton onClick={() => setIdx(Math.max(0, idx - 1))} className="text-sm px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200">Prev</MagneticButton>
-              <MagneticButton onClick={() => setIdx(Math.min(steps.length - 1, idx + 1))} className="text-sm px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">Next</MagneticButton>
+              <MagneticButton lite={lite} onClick={() => setIdx(Math.max(0, idx - 1))} className="text-sm px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200">Prev</MagneticButton>
+              <MagneticButton lite={lite} onClick={() => setIdx(Math.min(steps.length - 1, idx + 1))} className="text-sm px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">Next</MagneticButton>
             </div>
           </div>
         </div>
 
-        {/* Grid of revealed chapters */}
         <div className="mt-10 grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           {steps.slice(0,3).map((s, i) => (
-            <StoryPanel key={i} step={i + 1} title={s.title} emoji={s.emoji} accent={s.accent} copy={s.copy} />
+            <StoryPanel key={i} lite={lite} step={i + 1} title={s.title} emoji={s.emoji} accent={s.accent} copy={s.copy} />
           ))}
         </div>
       </div>
@@ -292,20 +369,20 @@ function StoryRail({ idx, setIdx }) {
   )
 }
 
-function Feature({ title, copy, icon, accent }) {
+function Feature({ title, copy, icon, accent, lite = false }) {
   return (
-    <TiltCard className="relative overflow-hidden rounded-2xl border bg-white p-5 shadow-sm">
-      <div className={`absolute -top-10 -right-10 h-24 w-24 rounded-full blur-2xl ${accent}`} />
+    <div className={`relative overflow-hidden rounded-2xl border ${lite ? 'bg-white' : 'bg-white'} p-5 shadow-sm`}>
+      {!lite && <div className={`absolute -top-10 -right-10 h-24 w-24 rounded-full blur-2xl ${accent}`} />}
       <div className="relative">
         <div className="text-2xl">{icon}</div>
         <h4 className="mt-3 font-semibold text-gray-900">{title}</h4>
         <p className="mt-1 text-sm text-gray-600">{copy}</p>
       </div>
-    </TiltCard>
+    </div>
   )
 }
 
-function Benefits() {
+function Benefits({ lite = false }) {
   return (
     <section className="px-6 py-16 bg-gradient-to-b from-indigo-50 to-white">
       <div className="mx-auto max-w-6xl">
@@ -314,17 +391,17 @@ function Benefits() {
           <p className="mt-2 text-gray-600">Designed for momentum — everything you need to go from question to insight.</p>
         </div>
         <div className="mt-10 grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          <Feature title="Instant Matches" icon="✨" accent="bg-indigo-200/70" copy="See top mentors and peers for your goals in seconds." />
-          <Feature title="Fair Value" icon="🪙" accent="bg-amber-200/70" copy="Tokens reward teaching and fuel your learning." />
-          <Feature title="Real-time Tools" icon="⚡" accent="bg-fuchsia-200/70" copy="Chat, video, and whiteboard — no context switching." />
-          <Feature title="AI Guidance" icon="🤝" accent="bg-emerald-200/70" copy="Personalized plans and nudges to keep you moving." />
+          <Feature lite={lite} title="Instant Matches" icon="✨" accent="bg-indigo-200/70" copy="See top mentors and peers for your goals in seconds." />
+          <Feature lite={lite} title="Fair Value" icon="🪙" accent="bg-amber-200/70" copy="Tokens reward teaching and fuel your learning." />
+          <Feature lite={lite} title="Real-time Tools" icon="⚡" accent="bg-fuchsia-200/70" copy="Chat, video, and whiteboard — no context switching." />
+          <Feature lite={lite} title="AI Guidance" icon="🤝" accent="bg-emerald-200/70" copy="Personalized plans and nudges to keep you moving." />
         </div>
       </div>
     </section>
   )
 }
 
-function MatchDemo() {
+function MatchDemo({ lite = false }) {
   const [wanted, setWanted] = useState('React, Python')
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
@@ -361,16 +438,18 @@ function MatchDemo() {
             <h2 className="text-3xl font-bold">Smart Matching</h2>
             <p className="text-gray-600 mt-1">Shows users who teach what you want to learn.</p>
           </div>
-          <motion.div initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ delay: 0.2 }} className="hidden md:block text-sm text-gray-500">Tip: Hover cards for depth</motion.div>
+          {!lite && (
+            <div className="hidden md:block text-sm text-gray-500">Tip: Hover cards for depth</div>
+          )}
         </div>
         <div className="mt-5 flex gap-3 items-center">
           <input value={wanted} onChange={(e) => setWanted(e.target.value)} placeholder="e.g., React, UX, Node.js" className="w-full max-w-md border border-gray-200 rounded-lg px-4 py-2 outline-none focus:ring-2 focus:ring-indigo-200" />
-          <MagneticButton onClick={search} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg">{loading ? 'Searching...' : 'Search'}</MagneticButton>
+          <MagneticButton lite={lite} onClick={search} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg">{loading ? 'Searching...' : 'Search'}</MagneticButton>
         </div>
 
         <div className="mt-6 grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {results.map((u) => (
-            <TiltCard key={u._id} className="border rounded-xl p-4 bg-gradient-to-br from-white to-indigo-50/40">
+            <TiltCard key={u._id} enabled={!lite} className="border rounded-xl p-4 bg-gradient-to-br from-white to-indigo-50/40">
               <div className="font-semibold text-gray-900">{u.name || 'User'}</div>
               <div className="text-sm text-gray-600">Teaches: {(u.skills_teach || []).join(', ') || '—'}</div>
               {u.overlap?.length > 0 && (
@@ -387,7 +466,7 @@ function MatchDemo() {
   )
 }
 
-function CreateUserDemo() {
+function CreateUserDemo({ lite = false }) {
   const [name, setName] = useState('Alex Mentor')
   const [email, setEmail] = useState('alex@example.com')
   const [teach, setTeach] = useState('React, Python')
@@ -430,34 +509,34 @@ function CreateUserDemo() {
             <input className="w-full border border-gray-200 rounded-lg px-4 py-2" value={teach} onChange={(e)=>setTeach(e.target.value)} placeholder="Skills to teach (comma separated)" />
             <input className="w-full border border-gray-200 rounded-lg px-4 py-2" value={learn} onChange={(e)=>setLearn(e.target.value)} placeholder="Skills to learn (comma separated)" />
           </div>
-          <TiltCard className="rounded-xl border p-4 bg-white">
+          <div className={`rounded-xl border p-4 ${lite ? 'bg-white' : 'bg-white'} `}>
             <div className="text-sm text-gray-600">Tokens start at 1. You can use the matching above to find peers.</div>
-            <MagneticButton onClick={createUser} className="mt-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg" disabled={loading}>
+            <MagneticButton lite={lite} onClick={createUser} className="mt-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg" disabled={loading}>
               {loading ? 'Creating...' : 'Create Demo User'}
             </MagneticButton>
             {createdId && <div className="mt-2 text-sm text-green-700">Created user with id: {createdId}</div>}
-          </TiltCard>
+          </div>
         </div>
       </div>
     </section>
   )
 }
 
-function CTA() {
+function CTA({ lite = false }) {
   return (
     <section className="relative px-6 py-20">
-      <Glow />
-      <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }} className="mx-auto max-w-5xl overflow-hidden rounded-3xl border bg-gradient-to-r from-indigo-600 to-fuchsia-600 p-8 text-white shadow">
+      <Glow lite={lite} />
+      <div className={`mx-auto max-w-5xl overflow-hidden rounded-3xl border ${lite ? 'bg-indigo-600' : 'bg-gradient-to-r from-indigo-600 to-fuchsia-600'} p-8 text-white shadow`}>
         <div className="grid md:grid-cols-2 gap-6 items-center">
           <div>
             <h3 className="text-3xl font-extrabold">Ready to swap skills?</h3>
             <p className="mt-2 text-white/90">Create your profile, match with mentors and learners, and jump into your first live session today.</p>
             <div className="mt-6 flex gap-3">
-              <MagneticButton as="a" href="#create" className="bg-white text-indigo-700 px-5 py-2.5 rounded-lg shadow">Create your profile</MagneticButton>
-              <MagneticButton as="a" href="#match" className="bg-white/20 hover:bg-white/30 text-white px-5 py-2.5 rounded-lg border border-white/40">Find mentors</MagneticButton>
+              <MagneticButton lite={lite} as="a" href="#create" className="bg-white text-indigo-700 px-5 py-2.5 rounded-lg shadow">Create your profile</MagneticButton>
+              <MagneticButton lite={lite} as="a" href="#match" className="bg-white/20 hover:bg-white/30 text-white px-5 py-2.5 rounded-lg border border-white/40">Find mentors</MagneticButton>
             </div>
           </div>
-          <div className="relative h-48 md:h-56 rounded-2xl bg-white/10 border border-white/20 backdrop-blur flex items-center justify-center">
+          <div className="relative h-48 md:h-56 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center">
             <div className="text-center">
               <div className="text-sm uppercase tracking-widest text-white/80">Live Toolkit</div>
               <div className="mt-2 text-2xl">🎥 + 📝 + 💬</div>
@@ -465,13 +544,13 @@ function CTA() {
             </div>
           </div>
         </div>
-      </motion.div>
+      </div>
     </section>
   )
 }
 
 // Floating Chat Preview (docks bottom-right, toggleable)
-function FloatingChat({ open, setOpen }) {
+function FloatingChat({ open, setOpen, lite = false }) {
   const [messages, setMessages] = useState([
     { id: 1, from: 'Maya', text: 'Hey! Ready to start the React session?', t: '10:30' },
     { id: 2, from: 'You', text: 'Yes! Let’s go. I’ve got questions about hooks.', t: '10:31' },
@@ -489,9 +568,8 @@ function FloatingChat({ open, setOpen }) {
     <div className="fixed right-4 bottom-4 z-50">
       <AnimatePresence>
         {open && (
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
-            className="w-80 sm:w-96 rounded-2xl border bg-white shadow-xl overflow-hidden">
-            <div className="flex items-center justify-between px-3 py-2 border-b bg-gradient-to-r from-indigo-600 to-fuchsia-600 text-white">
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className={`w-80 sm:w-96 rounded-2xl border ${lite ? 'bg-white' : 'bg-white'} shadow-xl overflow-hidden`}>
+            <div className={`flex items-center justify-between px-3 py-2 border-b ${lite ? 'bg-indigo-600' : 'bg-gradient-to-r from-indigo-600 to-fuchsia-600'} text-white`}>
               <div className="text-sm font-semibold">Chat Preview</div>
               <button onClick={() => setOpen(false)} className="text-white/90 hover:text-white">✕</button>
             </div>
@@ -508,7 +586,7 @@ function FloatingChat({ open, setOpen }) {
             <div className="p-2 border-t bg-white">
               <div className="flex gap-2">
                 <input value={input} onChange={(e)=>setInput(e.target.value)} placeholder="Type a message (preview)" className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm" />
-                <MagneticButton onClick={send} className="px-3 py-2 rounded-lg bg-indigo-600 text-white">Send</MagneticButton>
+                <MagneticButton lite={lite} onClick={send} className="px-3 py-2 rounded-lg bg-indigo-600 text-white">Send</MagneticButton>
               </div>
               <div className="text-[11px] text-gray-500 mt-1">This is a UI preview. Real-time chat will connect via WebSockets.</div>
             </div>
@@ -516,16 +594,14 @@ function FloatingChat({ open, setOpen }) {
         )}
       </AnimatePresence>
       {!open && (
-        <MagneticButton onClick={() => setOpen(true)} className="rounded-full bg-indigo-600 text-white px-4 py-3 shadow-lg">
-          💬 Chat
-        </MagneticButton>
+        <MagneticButton lite={lite} onClick={() => setOpen(true)} className="rounded-full bg-indigo-600 text-white px-4 py-3 shadow-lg">💬 Chat</MagneticButton>
       )}
     </div>
   )
 }
 
 // Guided Onboarding Overlay that steps through StoryRail
-function OnboardingOverlay({ visible, setVisible, idx, setIdx }) {
+function OnboardingOverlay({ visible, setVisible, idx, setIdx, lite = false }) {
   const stepsHints = [
     'Tell us your goals and what you can teach.',
     'Earn when you teach. Spend to learn — simple and fair.',
@@ -536,11 +612,11 @@ function OnboardingOverlay({ visible, setVisible, idx, setIdx }) {
   if (!visible) return null
   return (
     <AnimatePresence>
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-40 bg-black/40">
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute top-[20%] left-1/2 -translate-x-1/2 w-[min(90%,700px)] pointer-events-auto">
-            <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="rounded-2xl border bg-white shadow-xl overflow-hidden">
-              <div className="px-5 py-4 bg-gradient-to-r from-indigo-600 to-fuchsia-600 text-white flex items-center justify-between">
+            <div className="rounded-2xl border bg-white shadow-xl overflow-hidden">
+              <div className={`${lite ? 'bg-indigo-600' : 'bg-gradient-to-r from-indigo-600 to-fuchsia-600'} px-5 py-4 text-white flex items-center justify-between`}>
                 <div className="font-semibold">Guided tour</div>
                 <button className="text-white/90 hover:text-white" onClick={() => setVisible(false)}>Skip</button>
               </div>
@@ -549,15 +625,15 @@ function OnboardingOverlay({ visible, setVisible, idx, setIdx }) {
                 <h4 className="mt-1 text-xl font-semibold text-gray-900">{stepsHints[idx]}</h4>
                 <p className="mt-2 text-sm text-gray-600">Use Next to move through the chapters. We’ll auto-scroll the story.</p>
                 <div className="mt-4 flex items-center justify-between">
-                  <MagneticButton onClick={() => setIdx(Math.max(0, idx - 1))} className="px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200">Back</MagneticButton>
+                  <MagneticButton lite={lite} onClick={() => setIdx(Math.max(0, idx - 1))} className="px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200">Back</MagneticButton>
                   {idx < 4 ? (
-                    <MagneticButton onClick={() => setIdx(Math.min(4, idx + 1))} className="px-4 py-2 rounded-lg bg-indigo-600 text-white">Next</MagneticButton>
+                    <MagneticButton lite={lite} onClick={() => setIdx(Math.min(4, idx + 1))} className="px-4 py-2 rounded-lg bg-indigo-600 text-white">Next</MagneticButton>
                   ) : (
-                    <MagneticButton onClick={() => setVisible(false)} className="px-4 py-2 rounded-lg bg-emerald-600 text-white">Finish</MagneticButton>
+                    <MagneticButton lite={lite} onClick={() => setVisible(false)} className="px-4 py-2 rounded-lg bg-emerald-600 text-white">Finish</MagneticButton>
                   )}
                 </div>
               </div>
-            </motion.div>
+            </div>
           </div>
         </div>
       </motion.div>
@@ -566,9 +642,18 @@ function OnboardingOverlay({ visible, setVisible, idx, setIdx }) {
 }
 
 export default function App() {
+  const reducedMotion = usePrefersReducedMotion()
+  const reducedData = usePrefersReducedData()
+  const [lite, setLite] = useState(false)
   const [storyIdx, setStoryIdx] = useState(0)
   const [tourOpen, setTourOpen] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
+
+  // Initialize lite mode for mobile and reduced preferences
+  useEffect(() => {
+    const isMobile = window.matchMedia('(max-width: 640px)').matches
+    setLite(isMobile || reducedMotion || reducedData)
+  }, [reducedMotion, reducedData])
 
   useEffect(() => {
     const el = document.getElementById('story')
@@ -577,22 +662,22 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col scroll-smooth">
-      <ScrollProgress />
-      <Landing onStartStory={() => setTourOpen(true)} onStartMatch={() => {}} />
-      <StoryRail idx={storyIdx} setIdx={setStoryIdx} />
-      <Benefits />
-      <MatchDemo />
-      <CreateUserDemo />
-      <CTA />
+      <ScrollProgress lite={lite} />
+      <Landing lite={lite} onStartStory={() => setTourOpen(true)} onStartMatch={() => {}} />
+      <StoryRail lite={lite} idx={storyIdx} setIdx={setStoryIdx} />
+      <Benefits lite={lite} />
+      <MatchDemo lite={lite} />
+      <CreateUserDemo lite={lite} />
+      <CTA lite={lite} />
       <footer className="px-6 py-10 text-center text-sm text-gray-500">SkillSwap – Peer-to-Peer Learning • Token Economy • Real-time</footer>
 
-      <OnboardingOverlay visible={tourOpen} setVisible={setTourOpen} idx={storyIdx} setIdx={setStoryIdx} />
-      <FloatingChat open={chatOpen} setOpen={setChatOpen} />
+      <OnboardingOverlay lite={lite} visible={tourOpen} setVisible={setTourOpen} idx={storyIdx} setIdx={setStoryIdx} />
+      <FloatingChat lite={lite} open={chatOpen} setOpen={setChatOpen} />
 
-      {/* Quick-access floating actions */}
+      {/* Performance toggle */}
       <div className="fixed left-4 bottom-4 z-40 hidden sm:flex flex-col gap-2">
-        <MagneticButton onClick={() => setTourOpen(true)} className="px-4 py-2 rounded-lg bg-white border text-gray-800 shadow">❔ Tour</MagneticButton>
-        <MagneticButton onClick={() => setChatOpen(v => !v)} className="px-4 py-2 rounded-lg bg-indigo-600 text-white shadow">{chatOpen ? 'Hide Chat' : 'Open Chat'}</MagneticButton>
+        <button onClick={() => setLite(v => !v)} className="px-3 py-2 rounded-lg bg-white border text-gray-800 shadow">⚡ Lite mode: {lite ? 'On' : 'Off'}</button>
+        <MagneticButton lite={lite} onClick={() => setChatOpen(v => !v)} className="px-4 py-2 rounded-lg bg-indigo-600 text-white shadow">{chatOpen ? 'Hide Chat' : 'Open Chat'}</MagneticButton>
       </div>
     </div>
   )
