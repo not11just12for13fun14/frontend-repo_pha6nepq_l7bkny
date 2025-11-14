@@ -1,7 +1,7 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useAuth } from '../components/AuthProvider'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import Spline from '@splinetool/react-spline'
 
 const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
@@ -33,19 +33,75 @@ function Section({ eyebrow, title, body, align = 'left', cta, index }) {
   )
 }
 
+function DemoLoginModal({ open, onClose }) {
+  const { loginWithPassword, loading, error } = useAuth()
+  const [email, setEmail] = useState('demo@skillswap.dev')
+  const [password, setPassword] = useState('demo123')
+  const navigate = useNavigate()
+
+  if (!open) return null
+
+  const onSubmit = async (e) => {
+    e.preventDefault()
+    const res = await loginWithPassword(email, password)
+    if (res?.ok) {
+      onClose()
+      navigate('/app')
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white shadow-xl border">
+        <div className="p-5 border-b">
+          <h3 className="text-lg font-semibold">Demo login</h3>
+          <p className="mt-1 text-sm text-gray-600">Use the preset credentials to sign in during development.</p>
+        </div>
+        <form onSubmit={onSubmit} className="p-5 space-y-4">
+          <div>
+            <label className="text-sm text-gray-700">Email</label>
+            <input value={email} onChange={(e)=>setEmail(e.target.value)} type="email" className="mt-1 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="demo@skillswap.dev" />
+          </div>
+          <div>
+            <label className="text-sm text-gray-700">Password</label>
+            <input value={password} onChange={(e)=>setPassword(e.target.value)} type="password" className="mt-1 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="demo123" />
+          </div>
+          {error && <div className="text-sm text-red-600">{error}</div>}
+          <div className="flex items-center justify-between">
+            <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border">Cancel</button>
+            <button type="submit" disabled={loading} className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-60">
+              {loading ? 'Signing in…' : 'Sign in'}
+            </button>
+          </div>
+        </form>
+        <div className="px-5 pb-5 text-xs text-gray-500">Tip: Try demo@skillswap.dev / demo123</div>
+      </div>
+    </div>
+  )
+}
+
 export default function Landing() {
   const { user, loginWithGoogle, logout, loading } = useAuth()
+  const [demoOpen, setDemoOpen] = useState(false)
 
   const heroCTA = (
     <div className="mt-8 flex flex-wrap items-center gap-3">
       {!user ? (
-        <button
-          onClick={loginWithGoogle}
-          disabled={loading}
-          className="px-6 py-3 rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-500 transition"
-        >
-          {loading ? 'Signing in…' : 'Start with Google'}
-        </button>
+        <>
+          <button
+            onClick={loginWithGoogle}
+            disabled={loading}
+            className="px-6 py-3 rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-500 transition"
+          >
+            {loading ? 'Signing in…' : 'Start with Google'}
+          </button>
+          <button
+            onClick={() => setDemoOpen(true)}
+            className="px-6 py-3 rounded-xl bg-white/80 backdrop-blur text-gray-800 border border-gray-200 hover:bg-white transition"
+          >
+            Use Demo Login
+          </button>
+        </>
       ) : (
         <>
           <Link
@@ -74,13 +130,16 @@ export default function Landing() {
         </div>
         <div className="flex items-center gap-3">
           {!user ? (
-            <button
-              onClick={loginWithGoogle}
-              disabled={loading}
-              className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500"
-            >
-              {loading ? 'Signing in…' : 'Login with Google'}
-            </button>
+            <>
+              <button
+                onClick={loginWithGoogle}
+                disabled={loading}
+                className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500"
+              >
+                {loading ? 'Signing in…' : 'Login with Google'}
+              </button>
+              <button onClick={() => setDemoOpen(true)} className="px-4 py-2 rounded-lg bg-white border">Demo Login</button>
+            </>
           ) : (
             <>
               <span className="text-sm text-gray-700 hidden sm:inline">Hi, {user.name}</span>
@@ -218,6 +277,8 @@ export default function Landing() {
       </section>
 
       <footer className="px-6 py-10 text-center text-sm text-gray-500">SkillSwap – Learn by teaching. Teach by learning.</footer>
+
+      <DemoLoginModal open={demoOpen} onClose={() => setDemoOpen(false)} />
     </div>
   )
 }
