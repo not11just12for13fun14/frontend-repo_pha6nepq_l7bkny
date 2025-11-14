@@ -56,7 +56,79 @@ function ScrollProgress() {
   )
 }
 
-function Landing() {
+// Magnetic button + micro-sparkles
+function MagneticButton({ children, className = '', onClick, as = 'button', href }) {
+  const ref = useRef(null)
+  const [btnStyle, setBtnStyle] = useState({})
+  const [sparks, setSparks] = useState([])
+
+  const createSpark = (x, y) => {
+    const id = Math.random().toString(36).slice(2)
+    const colorPool = ['#ffffff', '#f0abfc', '#93c5fd', '#c7d2fe', '#a7f3d0']
+    const color = colorPool[Math.floor(Math.random()*colorPool.length)]
+    const size = Math.random()*6 + 4
+    const dx = (Math.random()-0.5) * 40
+    const dy = (Math.random()-0.5) * 40
+    const life = 600 + Math.random()*400
+    const spark = { id, x, y, dx, dy, size, color }
+    setSparks(prev => [...prev, spark])
+    setTimeout(() => {
+      setSparks(prev => prev.filter(s => s.id !== id))
+    }, life)
+  }
+
+  const onMove = (e) => {
+    const el = ref.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    const relX = e.clientX - r.left
+    const relY = e.clientY - r.top
+    const mx = (relX - r.width/2) / (r.width/2)
+    const my = (relY - r.height/2) / (r.height/2)
+    setBtnStyle({ transform: `translate(${mx*6}px, ${my*6}px)` })
+    if (Math.random() < 0.3) createSpark(relX, relY)
+  }
+  const onLeave = () => setBtnStyle({ transform: 'translate(0px, 0px)' })
+
+  const Common = ({ children }) => (
+    <motion.span
+      ref={ref}
+      onMouseMove={onMove}
+      onMouseLeave={onLeave}
+      whileTap={{ scale: 0.98 }}
+      className={`relative inline-flex items-center justify-center overflow-hidden ${className}`}
+      style={btnStyle}
+    >
+      <span className="pointer-events-none absolute inset-0 bg-gradient-to-r from-white/10 to-white/0" />
+      {sparks.map(s => (
+        <span key={s.id} className="pointer-events-none absolute rounded-full"
+          style={{
+            left: s.x, top: s.y, width: s.size, height: s.size,
+            background: s.color, filter: 'blur(0.5px)',
+            transform: `translate(${s.dx}px, ${s.dy}px)`,
+            opacity: 0.85, transition: 'transform 700ms ease-out, opacity 700ms ease-out'
+          }}
+        />
+      ))}
+      <span className="relative z-10">{children}</span>
+    </motion.span>
+  )
+
+  if (as === 'a') {
+    return (
+      <a href={href} onClick={onClick} className="inline-block">
+        <Common>{children}</Common>
+      </a>
+    )
+  }
+  return (
+    <button onClick={onClick} className="inline-block">
+      <Common>{children}</Common>
+    </button>
+  )
+}
+
+function Landing({ onStartStory, onStartMatch }) {
   const { scrollYProgress } = useScroll()
   const y1 = useTransform(scrollYProgress, [0, 1], [0, -150])
   const y2 = useTransform(scrollYProgress, [0, 1], [0, -60])
@@ -92,8 +164,8 @@ function Landing() {
               Earn Skill Tokens by teaching. Spend them to learn. Real-time chat, scheduling, and live sessions — all in one place.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
-              <a href="#story" className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg shadow">See the Story</a>
-              <a href="#match" className="bg-white hover:bg-gray-50 text-indigo-700 border border-indigo-200 px-5 py-2.5 rounded-lg shadow-sm">Start Matching</a>
+              <MagneticButton as="a" href="#story" onClick={onStartStory} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg shadow">See the Story</MagneticButton>
+              <MagneticButton as="a" href="#match" onClick={onStartMatch} className="bg-white hover:bg-gray-50 text-indigo-700 border border-indigo-200 px-5 py-2.5 rounded-lg shadow-sm">Start Matching</MagneticButton>
             </div>
             <p className="mt-3 text-sm text-gray-500">Powered by FastAPI, WebSockets, and MongoDB</p>
           </motion.div>
@@ -166,8 +238,7 @@ function StoryPanel({ step, title, copy, accent, emoji }) {
   )
 }
 
-function StoryRail() {
-  const [idx, setIdx] = useState(0)
+function StoryRail({ idx, setIdx }) {
   const steps = [
     { title: 'Discover your path', emoji: '🧭', accent: 'bg-gradient-to-r from-indigo-200 to-sky-200', copy: 'Tell us what you want to learn, and what you can teach. Our matching shows mentors and peers who fit your goals.' },
     { title: 'Earn and spend tokens', emoji: '🪙', accent: 'bg-gradient-to-r from-amber-200 to-fuchsia-200', copy: 'Teach to earn, learn to spend. The token economy keeps help flowing both ways — fair and simple.' },
@@ -204,8 +275,8 @@ function StoryRail() {
               </AnimatePresence>
             </div>
             <div className="flex items-center justify-between px-4 py-3 border-t">
-              <button onClick={() => setIdx(Math.max(0, idx - 1))} className="text-sm px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200">Prev</button>
-              <button onClick={() => setIdx(Math.min(steps.length - 1, idx + 1))} className="text-sm px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">Next</button>
+              <MagneticButton onClick={() => setIdx(Math.max(0, idx - 1))} className="text-sm px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200">Prev</MagneticButton>
+              <MagneticButton onClick={() => setIdx(Math.min(steps.length - 1, idx + 1))} className="text-sm px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">Next</MagneticButton>
             </div>
           </div>
         </div>
@@ -294,7 +365,7 @@ function MatchDemo() {
         </div>
         <div className="mt-5 flex gap-3 items-center">
           <input value={wanted} onChange={(e) => setWanted(e.target.value)} placeholder="e.g., React, UX, Node.js" className="w-full max-w-md border border-gray-200 rounded-lg px-4 py-2 outline-none focus:ring-2 focus:ring-indigo-200" />
-          <button onClick={search} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg">{loading ? 'Searching...' : 'Search'}</button>
+          <MagneticButton onClick={search} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg">{loading ? 'Searching...' : 'Search'}</MagneticButton>
         </div>
 
         <div className="mt-6 grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -361,9 +432,9 @@ function CreateUserDemo() {
           </div>
           <TiltCard className="rounded-xl border p-4 bg-white">
             <div className="text-sm text-gray-600">Tokens start at 1. You can use the matching above to find peers.</div>
-            <button onClick={createUser} disabled={loading} className="mt-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg">
+            <MagneticButton onClick={createUser} className="mt-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg" disabled={loading}>
               {loading ? 'Creating...' : 'Create Demo User'}
-            </button>
+            </MagneticButton>
             {createdId && <div className="mt-2 text-sm text-green-700">Created user with id: {createdId}</div>}
           </TiltCard>
         </div>
@@ -382,8 +453,8 @@ function CTA() {
             <h3 className="text-3xl font-extrabold">Ready to swap skills?</h3>
             <p className="mt-2 text-white/90">Create your profile, match with mentors and learners, and jump into your first live session today.</p>
             <div className="mt-6 flex gap-3">
-              <a href="#create" className="bg-white text-indigo-700 px-5 py-2.5 rounded-lg shadow">Create your profile</a>
-              <a href="#match" className="bg-white/20 hover:bg-white/30 text-white px-5 py-2.5 rounded-lg border border-white/40">Find mentors</a>
+              <MagneticButton as="a" href="#create" className="bg-white text-indigo-700 px-5 py-2.5 rounded-lg shadow">Create your profile</MagneticButton>
+              <MagneticButton as="a" href="#match" className="bg-white/20 hover:bg-white/30 text-white px-5 py-2.5 rounded-lg border border-white/40">Find mentors</MagneticButton>
             </div>
           </div>
           <div className="relative h-48 md:h-56 rounded-2xl bg-white/10 border border-white/20 backdrop-blur flex items-center justify-center">
@@ -399,17 +470,130 @@ function CTA() {
   )
 }
 
+// Floating Chat Preview (docks bottom-right, toggleable)
+function FloatingChat({ open, setOpen }) {
+  const [messages, setMessages] = useState([
+    { id: 1, from: 'Maya', text: 'Hey! Ready to start the React session?', t: '10:30' },
+    { id: 2, from: 'You', text: 'Yes! Let’s go. I’ve got questions about hooks.', t: '10:31' },
+  ])
+  const [input, setInput] = useState('')
+
+  const send = () => {
+    if (!input.trim()) return
+    const id = Math.random().toString(36).slice(2)
+    setMessages(prev => [...prev, { id, from: 'You', text: input.trim(), t: 'now' }])
+    setInput('')
+  }
+
+  return (
+    <div className="fixed right-4 bottom-4 z-50">
+      <AnimatePresence>
+        {open && (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
+            className="w-80 sm:w-96 rounded-2xl border bg-white shadow-xl overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-2 border-b bg-gradient-to-r from-indigo-600 to-fuchsia-600 text-white">
+              <div className="text-sm font-semibold">Chat Preview</div>
+              <button onClick={() => setOpen(false)} className="text-white/90 hover:text-white">✕</button>
+            </div>
+            <div className="max-h-64 overflow-auto p-3 space-y-2 bg-gradient-to-b from-white to-indigo-50/40">
+              {messages.map(m => (
+                <div key={m.id} className={`flex ${m.from === 'You' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`${m.from === 'You' ? 'bg-indigo-600 text-white' : 'bg-white'} border rounded-xl px-3 py-1.5 text-sm max-w-[75%] shadow-sm`}>
+                    <div className="opacity-80 text-xs mb-0.5">{m.from}</div>
+                    <div>{m.text}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="p-2 border-t bg-white">
+              <div className="flex gap-2">
+                <input value={input} onChange={(e)=>setInput(e.target.value)} placeholder="Type a message (preview)" className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                <MagneticButton onClick={send} className="px-3 py-2 rounded-lg bg-indigo-600 text-white">Send</MagneticButton>
+              </div>
+              <div className="text-[11px] text-gray-500 mt-1">This is a UI preview. Real-time chat will connect via WebSockets.</div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {!open && (
+        <MagneticButton onClick={() => setOpen(true)} className="rounded-full bg-indigo-600 text-white px-4 py-3 shadow-lg">
+          💬 Chat
+        </MagneticButton>
+      )}
+    </div>
+  )
+}
+
+// Guided Onboarding Overlay that steps through StoryRail
+function OnboardingOverlay({ visible, setVisible, idx, setIdx }) {
+  const stepsHints = [
+    'Tell us your goals and what you can teach.',
+    'Earn when you teach. Spend to learn — simple and fair.',
+    'Jump into live video, whiteboard, and chat.',
+    'Get a tailored learning plan with AI coaching.',
+    'Grow your reputation with reviews and milestones.'
+  ]
+  if (!visible) return null
+  return (
+    <AnimatePresence>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]">
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute top-[20%] left-1/2 -translate-x-1/2 w-[min(90%,700px)] pointer-events-auto">
+            <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="rounded-2xl border bg-white shadow-xl overflow-hidden">
+              <div className="px-5 py-4 bg-gradient-to-r from-indigo-600 to-fuchsia-600 text-white flex items-center justify-between">
+                <div className="font-semibold">Guided tour</div>
+                <button className="text-white/90 hover:text-white" onClick={() => setVisible(false)}>Skip</button>
+              </div>
+              <div className="p-5">
+                <div className="text-sm text-gray-500">Step {idx+1} of 5</div>
+                <h4 className="mt-1 text-xl font-semibold text-gray-900">{stepsHints[idx]}</h4>
+                <p className="mt-2 text-sm text-gray-600">Use Next to move through the chapters. We’ll auto-scroll the story.</p>
+                <div className="mt-4 flex items-center justify-between">
+                  <MagneticButton onClick={() => setIdx(Math.max(0, idx - 1))} className="px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200">Back</MagneticButton>
+                  {idx < 4 ? (
+                    <MagneticButton onClick={() => setIdx(Math.min(4, idx + 1))} className="px-4 py-2 rounded-lg bg-indigo-600 text-white">Next</MagneticButton>
+                  ) : (
+                    <MagneticButton onClick={() => setVisible(false)} className="px-4 py-2 rounded-lg bg-emerald-600 text-white">Finish</MagneticButton>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        </div>
+      </motion.div>
+    </AnimatePresence>
+  )
+}
+
 export default function App() {
+  const [storyIdx, setStoryIdx] = useState(0)
+  const [tourOpen, setTourOpen] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
+
+  useEffect(() => {
+    const el = document.getElementById('story')
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [storyIdx])
+
   return (
     <div className="min-h-screen flex flex-col scroll-smooth">
       <ScrollProgress />
-      <Landing />
-      <StoryRail />
+      <Landing onStartStory={() => setTourOpen(true)} onStartMatch={() => {}} />
+      <StoryRail idx={storyIdx} setIdx={setStoryIdx} />
       <Benefits />
       <MatchDemo />
       <CreateUserDemo />
       <CTA />
       <footer className="px-6 py-10 text-center text-sm text-gray-500">SkillSwap – Peer-to-Peer Learning • Token Economy • Real-time</footer>
+
+      <OnboardingOverlay visible={tourOpen} setVisible={setTourOpen} idx={storyIdx} setIdx={setStoryIdx} />
+      <FloatingChat open={chatOpen} setOpen={setChatOpen} />
+
+      {/* Quick-access floating actions */}
+      <div className="fixed left-4 bottom-4 z-40 hidden sm:flex flex-col gap-2">
+        <MagneticButton onClick={() => setTourOpen(true)} className="px-4 py-2 rounded-lg bg-white border text-gray-800 shadow">❔ Tour</MagneticButton>
+        <MagneticButton onClick={() => setChatOpen(v => !v)} className="px-4 py-2 rounded-lg bg-indigo-600 text-white shadow">{chatOpen ? 'Hide Chat' : 'Open Chat'}</MagneticButton>
+      </div>
     </div>
   )
 }
